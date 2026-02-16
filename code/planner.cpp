@@ -20,6 +20,58 @@
 
 #define NUMOFDIRS 8
 
+void backwardsA(
+  int target_steps,
+  int* target_traj,
+  int x_size,
+  int y_size,
+  int** h_table,
+  int* map,
+  int collision_thresh
+  )
+{
+  int dX[NUMOFDIRS] = {-1, -1, -1,  0,  0,  1, 1, 1};
+  int dY[NUMOFDIRS] = {-1,  0,  1, -1,  1, -1, 0, 1};
+  pqueue openSet(x_size*y_size);
+  bool* closed = new bool[x_size*y_size];
+  for(int i = 0; i < target_steps; i++){
+    node* goal = new node(target_traj[i], target_traj[target_steps+i]);
+    openSet.insertNode(goal);
+  }
+  node* curr;
+  while(curr = openSet.pop()){
+    int idx = GETMAPINDEX(curr->x, curr->y, x_size, y_size);
+    if (closed[idx] == 1) {
+      delete curr;
+      continue;
+    }
+    closed[idx] = true;
+    h_table[curr->y-1][curr->x-1] = curr->g;
+    for(int dir = 0; dir < NUMOFDIRS; dir++)
+    {
+      //Try each newx and newy
+      int newx = curr->x + dX[dir];
+      int newy = curr->y + dY[dir];
+
+      //If this pose is in the map
+      if (newx >= 1 && newx <= x_size && newy >= 1 && newy <= y_size)
+      {
+        //if not a collision 
+        if ((map[GETMAPINDEX(newx,newy,x_size,y_size)] >= 0) && (map[GETMAPINDEX(newx,newy,x_size,y_size)] < collision_thresh))  //if free
+        {
+          //
+          node* n = new node(newx,newy,curr->g + map[GETMAPINDEX(newx,newy,x_size,y_size)]);
+          // if(){
+          openSet.insertNode(n);
+          // }
+        }
+      }
+    }
+    delete curr;
+  }
+  delete[] closed;
+}
+
 void planner(
     int* map,
     int collision_thresh,
@@ -94,63 +146,50 @@ void planner(
     openSet.insertNode(neighbor);
     openSet.printHeap();
     */
-    pqueue openSet(100);
-    int dX[NUMOFDIRS] = {-1, -1, -1,  0,  0,  1, 1, 1};
-    int dY[NUMOFDIRS] = {-1,  0,  1, -1,  1, -1, 0, 1};
-    for(int t = curr_time; t < target_steps; t++){
-      node* g = new node(target_traj[t], target_traj[t+target_steps]);
-      openSet.insertNode(g);
+  static int** h_table = nullptr;
+  if(curr_time == 0){
+    h_table = new int*[y_size];
+    for(int j = 0; j < y_size; j++){
+      h_table[j] = new int[x_size];
     }
-    while (node* current = openSet.pop()){
-      for(int dir = 0; dir < NUMOFDIRS; dir++)
-      {
-        //Try each newx and newy
-        int newx = current->x + dX[dir];
-        int newy = current->y + dY[dir];
-
-        //If this pose is in the map
-        if (newx >= 1 && newx <= x_size && newy >= 1 && newy <= y_size)
-        {
-          //if not a collision 
-          if ((map[GETMAPINDEX(newx,newy,x_size,y_size)] >= 0) && (map[GETMAPINDEX(newx,newy,x_size,y_size)] < collision_thresh))  //if free
-          {
-
-            node* n = new node(newx,newy,current->g + map[GETMAPINDEX(newx,newy,x_size,y_size)]);
-            openSet.insertNode(n);
-          }
-        }
+    for(int i = 0; i < y_size; i++){
+      for(int j = 0; j < x_size; j++){
+        h_table[i][j] = 10000;
       }
     }
-    
+    backwardsA(target_steps,target_traj,x_size,y_size,h_table,map,collision_thresh);
+    for(int i = 0; i < y_size; i++){
+      printf("Row %d: h=%d\n",i,h_table[i][0]);
+    }
+  }
     //int goalposeX = target_traj[target_steps-1];
-    //int goalposeY = target_traj[target_steps-1+target_steps];
-    node start = new node(robotposeX, robotposeY, map[GETMAPINDEX(robotposeX,robotposeY,x_size,y_size)], 0, nullptr);
-    openSet.insertNode(start);
-    int disttotarget;
-    while(node* current = openSet.pop()){
-      if(){}
-      for(int dir = 0; dir < NUMOFDIRS; dir++)
-      {
-        //Try each newx and newy
-        int newx = robotposeX + dX[dir];
-        int newy = robotposeY + dY[dir];
-
-        //If this pose is in the map
-        if (newx >= 1 && newx <= x_size && newy >= 1 && newy <= y_size)
-        {
-          //if not a collision 
-          if ((map[GETMAPINDEX(newx,newy,x_size,y_size)] >= 0) && (map[GETMAPINDEX(newx,newy,x_size,y_size)] < collision_thresh))  //if free
-          {
-            //calculate the distance to target from new possible pose
-            disttotarget = (double)sqrt(((newx-goalposeX)*(newx-goalposeX) + (newy-goalposeY)*(newy-goalposeY)));
-            //If its better update all the shits
-            node* n = new node(newx,newy,map[GETMAPINDEX(newx,newy,x_size,y_size)], disttotarget);
-            openSet.insertNode(n);
-          }
-        }
-      }
-    }
-    action_ptr[0] = openSet.pop()->x;
-    action_ptr[1] = openSet.pop()->y;
-    return;
+  //int goalposeY = target_traj[target_steps-1+target_steps];
+  // node* start = new node(robotposeX, robotposeY, map[GETMAPINDEX(robotposeX,robotposeY,x_size,y_size)], 0, nullptr);
+  // openSet.insertNode(start);
+  // int disttotarget;
+  // while(node* current = openSet.pop()){
+  //   for(int dir = 0; dir < NUMOFDIRS; dir++)
+  //   {
+  //     //Try each newx and newy
+  //     int newx = robotposeX + dX[dir];
+  //     int newy = robotposeY + dY[dir];
+  //
+  //     //If this pose is in the map
+  //     if (newx >= 1 && newx <= x_size && newy >= 1 && newy <= y_size)
+  //     {
+  //       //if not a collision 
+  //       if ((map[GETMAPINDEX(newx,newy,x_size,y_size)] >= 0) && (map[GETMAPINDEX(newx,newy,x_size,y_size)] < collision_thresh))  //if free
+  //       {
+  //         //calculate the distance to target from new possible pose
+  //         disttotarget = (double)sqrt(((newx-goalposeX)*(newx-goalposeX) + (newy-goalposeY)*(newy-goalposeY)));
+  //         //If its better update all the shits
+  //         node* n = new node(newx,newy,map[GETMAPINDEX(newx,newy,x_size,y_size)], disttotarget);
+  //         openSet.insertNode(n);
+  //       }
+  //     }
+  //   }
+  // }
+  // action_ptr[0] = openSet.pop()->x;
+  // action_ptr[1] = openSet.pop()->y;
+  return;
 }
