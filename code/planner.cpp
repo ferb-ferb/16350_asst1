@@ -15,107 +15,54 @@
 #define MIN(A, B) ((A) < (B) ? (A) : (B))
 #endif
 
-#define NUMOFDIRS 9 // Added 9th direction for "Wait"
+#define NUMOFDIRS 9 // Added 9th direction for stay in place 
 
  void backwardsA(
-
   int target_steps,
-
   int* target_traj,
-
   int x_size,
-
   int y_size,
-
   int** h_table,
-
   int* map,
-
   int collision_thresh
-
   )
-
 {
-
   int dX[NUMOFDIRS] = {-1, -1, -1,  0,  0,  1, 1, 1};
-
   int dY[NUMOFDIRS] = {-1,  0,  1, -1,  1, -1, 0, 1};
-
   pqueue openSet(x_size*y_size);
-
   bool* closed = new bool[x_size*y_size];
-
   for(int i = 0; i < target_steps; i++){
-
     node* goal = new node(target_traj[i], target_traj[target_steps+i]);
-
     openSet.insertNode(goal);
-
   }
-
   node* curr;
-
   while(curr = openSet.pop()){
-
     int idx = GETMAPINDEX(curr->x, curr->y, x_size, y_size);
-
     if (closed[idx] == 1) {
-
       delete curr;
-
       continue;
-
     }
-
     closed[idx] = true;
-
     h_table[curr->y-1][curr->x-1] = curr->g;
-
     for(int dir = 0; dir < NUMOFDIRS; dir++)
-
     {
-
       //Try each newx and newy
-
       int newx = curr->x + dX[dir];
-
       int newy = curr->y + dY[dir];
-
-
       //If this pose is in the map
-
       if (newx >= 1 && newx <= x_size && newy >= 1 && newy <= y_size)
-
       {
-
-        //if not a collision 
-
+        //if not a collision
         if ((map[GETMAPINDEX(newx,newy,x_size,y_size)] >= 0) && (map[GETMAPINDEX(newx,newy,x_size,y_size)] < collision_thresh))  //if free
-
         {
-
-          //
-
           node* n = new node(newx,newy,curr->g + map[GETMAPINDEX(newx,newy,x_size,y_size)]);
-
-          // if(){
-
           openSet.insertNode(n);
-
-          // }
-
         }
-
       }
-
     }
-
     delete curr;
-
   }
-
   delete[] closed;
-
 } 
 
 void planner(
@@ -133,13 +80,9 @@ void planner(
     int* action_ptr
 )
 {
-    // --- 1. Static Heuristic Table (Persistent) ---
+    //static heuristic value table 
     static int** h_table = nullptr;
-    if(curr_time == 0 || h_table == nullptr){
-        if(h_table) { // Cleanup if resizing is needed
-            for(int j=0; j<y_size; j++) delete[] h_table[j];
-            delete[] h_table;
-        }
+    if(curr_time == 0){
         h_table = new int*[y_size];
         for(int j = 0; j < y_size; j++) {
             h_table[j] = new int[x_size];
@@ -148,16 +91,15 @@ void planner(
         backwardsA(target_steps, target_traj, x_size, y_size, h_table, map, collision_thresh);
     }
 
-    // --- 2. Space-Time A* Setup ---
     int dX[NUMOFDIRS] = {-1, -1, -1,  0,  0,  1, 1, 1, 0};
     int dY[NUMOFDIRS] = {-1,  0,  1, -1,  1, -1, 0, 1, 0};
 
-    // Use a G-table to prune paths. Initialize with "infinity"
-    // This is much faster than a bool closed list.
+    //switched to using a vector to store g_values so as to 
+    //more efficiently handle adding states to open set with pruning
     int total_states = x_size * y_size * target_steps;
     std::vector<int> g_table(total_states, 1000000);
 
-    pqueue openSet(50000); 
+    pqueue openSet(total_states); 
 
     // Start state
     int start_g = 0;
@@ -168,13 +110,12 @@ void planner(
     openSet.insertNode(start);
 
     node* goal_node = nullptr;
-    std::vector<node*> all_nodes; // To manage memory cleanup
+    std::vector<node*> all_nodes; //a list of all of my node pointers so i can easily free them at the end
     all_nodes.push_back(start);
 
-    // --- 3. Main Search Loop ---
     while(node* current = openSet.pop()) {
         
-        // Goal Check: Did we intercept the target at this time?
+        //goal reached?
         int targetX = target_traj[current->t];
         int targetY = target_traj[current->t + target_steps];
 
@@ -184,20 +125,20 @@ void planner(
         }
 
         if(current->t >= target_steps - 1) continue;
-
+        
         for(int dir=0; dir<NUMOFDIRS; dir++) {
             int newx = current->x + dX[dir];
             int newy = current->y + dY[dir];
             int newt = current->t + 1;
-
+            //valid state?
             if(newx >= 1 && newx <= x_size && newy >= 1 && newy <= y_size) {
                 int map_cost = map[GETMAPINDEX(newx, newy, x_size, y_size)];
-                
+                //not collision?
                 if(map_cost >= 0 && map_cost < collision_thresh) {
-                    int new_g = current->g + map_cost + 1; // +1 for time step
+                    int new_g = current->g + map_cost + 1; // add one to integrate time into g-val
                     int state_idx = GET3DINDEX(newx, newy, newt, x_size, y_size);
 
-                    // PRUNING: Only expand if this is the best path to this (x,y,t)
+                    // prunign logic: Only add this if this is the best path to this (x,y,t)
                     if(new_g < g_table[state_idx]) {
                         g_table[state_idx] = new_g;
                         int new_h = h_table[newy-1][newx-1];
@@ -211,21 +152,21 @@ void planner(
         }
     }
 
-    // --- 4. Extract Action ---
+    //Backtrace node pointers to get next step
     if(goal_node) {
         node* curr = goal_node;
-        // Trace back to the first move after the current state
+        //all the way back to the first step after start
         while(curr->parent && curr->parent != start) {
             curr = curr->parent;
         }
         action_ptr[0] = curr->x;
         action_ptr[1] = curr->y;
     } else {
-        // Fallback: stay put if no path found
+        //to be safe,if something goes wrong stay in place 
         action_ptr[0] = robotposeX;
         action_ptr[1] = robotposeY;
     }
 
-    // --- 5. Cleanup ---
+    //memory manage
     for(node* n : all_nodes) delete n;
 }
