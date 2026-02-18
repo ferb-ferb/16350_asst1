@@ -159,60 +159,103 @@ void planner(
     }
     backwardsA(target_steps,target_traj,x_size,y_size,h_table,map,collision_thresh);
   }
-  int dX[NUMOFDIRS] = {-1, -1, -1,  0,  0,  1, 1, 1};
-  int dY[NUMOFDIRS] = {-1,  0,  1, -1,  1, -1, 0, 1};
-  pqueue openSet(x_size*y_size);
-  bool* closed = new bool[x_size*y_size];
-  for(int i = 0; i < x_size*y_size; i++)
-    closed[i] = false;
-  node* start = new node(robotposeX,robotposeY,0 ,h_table[robotposeY-1][robotposeX-1],nullptr);
-  openSet.insertNode(start);
-  node* goal = nullptr;
-  while(node* current = openSet.pop()){
-    int idx = GETMAPINDEX(current->x, current->y, x_size, y_size);
-    if(closed[idx]){
-      delete current;
-      continue;
-    }
-    closed[idx] = true;
-    if(h_table[current->y-1][current->x-1]==0){
-      goal = current; 
-      break;
-    }
-    printf("Current Pos: (%d,%d)\n", current->x-1, current->y-1);
-    for(int dir = 0; dir < NUMOFDIRS; dir++)
-    {
-      //Try each newx and newy
-      int newx = current->x + dX[dir];
-      int newy = current->y + dY[dir];
+  // Forward planning
+int dX[NUMOFDIRS] = {-1,-1,-1,0,0,1,1,1};
+int dY[NUMOFDIRS] = {-1,0,1,-1,1,-1,0,1};
 
-      //If this pose is in the map
-      if (newx >= 1 && newx <= x_size && newy >= 1 && newy <= y_size)
-      {
-        //if not a collision 
-        if ((map[GETMAPINDEX(newx,newy,x_size,y_size)] >= 0) && (map[GETMAPINDEX(newx,newy,x_size,y_size)] < collision_thresh))  //if free
-        {
-          //
-          node* n = new node(newx,newy,current->g + map[GETMAPINDEX(newx,newy,x_size,y_size)],h_table[newy-1][newx-1],current);
-          // if(){
-          openSet.insertNode(n);
-          // }
-        }
-      }
+// 3D closed list: x,y,t
+int total_states = x_size * y_size * target_steps;
+bool* closed = new bool[total_states]();
+
+pqueue openSet(x_size * y_size); // will auto-grow
+
+// Start state
+node* start = new node(robotposeX,
+                       robotposeY,
+                       0,
+                       h_table[robotposeY-1][robotposeX-1],
+                       nullptr,
+                       curr_time);
+
+openSet.insertNode(start);
+
+node* goal = nullptr;
+
+while(node* current = openSet.pop()) {
+
+    // If target already gone
+    if(current->t >= target_steps) {
+        delete current;
+        continue;
     }
-  }
-      node* next_step = goal;
-      while(next_step && next_step -> parent && next_step->parent != start){
-        next_step = next_step->parent;
-      }
-      if(next_step){
-        action_ptr[0] = next_step->x;
-        action_ptr[1] = next_step->y;
-      }
-      else{
-        action_ptr[0] = robotposeX;
-        action_ptr[1] = robotposeY;
-      }
-      delete[] closed;
+
+    int idx = current->t * (x_size*y_size)
+              + GETMAPINDEX(current->x,current->y,x_size,y_size);
+
+    if(closed[idx]) {
+        delete current;
+        continue;
+    }
+
+    closed[idx] = true;
+
+    // Goal check
+    int targetX = target_traj[current->t];
+    int targetY = target_traj[current->t + target_steps];
+
+    if(current->x == targetX &&
+       current->y == targetY) {
+        goal = current;
+        break;
+    }
+
+    // Expand neighbors
+    for(int dir=0; dir<NUMOFDIRS; dir++) {
+
+        int newx = current->x + dX[dir];
+        int newy = current->y + dY[dir];
+        int newt = current->t + 1;
+
+        if(newx < 1 || newx > x_size ||
+           newy < 1 || newy > y_size)
+            continue;
+
+        if(newt >= target_steps)
+            continue;
+
+        int cost_here =
+            map[GETMAPINDEX(newx,newy,x_size,y_size)];
+
+        if(cost_here < 0 || cost_here >= collision_thresh)
+            continue;
+
+        int g_new = current->g + cost_here;
+
+        int h_new = h_table[newy-1][newx-1];
+
+        node* n = new node(newx,
+                           newy,
+                           g_new,
+                           h_new,
+                           current,
+                           newt);
+
+        openSet.insertNode(n);
+    }
+}
+
+// extract next step
+node* next_step = goal;
+while(next_step && next_step->parent && next_step->parent != start) next_step = next_step->parent;
+
+if(next_step){
+    action_ptr[0] = next_step->x;
+    action_ptr[1] = next_step->y;
+}else{
+    action_ptr[0] = robotposeX;
+    action_ptr[1] = robotposeY;
+}
+delete[] closed;
+
   return;
 }

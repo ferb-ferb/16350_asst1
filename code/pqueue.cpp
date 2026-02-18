@@ -4,8 +4,8 @@
 
 using namespace std;
 
-node::node(int x_, int y_, int g_, int h_, node* parent_)
-  :x(x_), y(y_), g(g_), h(h_), f(g_+h_), parent(parent_){}
+node::node(int x_, int y_,  int g_, int h_, node* parent_,int t_)
+  :x(x_), y(y_), t(t_), g(g_), h(h_), f(g_+h_), parent(parent_){}
 
 pqueue::pqueue(int cap){
   size = 0;

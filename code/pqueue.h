@@ -4,11 +4,11 @@
 #include <vector>
 
 struct node {
-    int x, y;
+    int x, y, t;
     int g, h, f;
     node* parent;
 
-    node(int x_, int y_, int g_ = 0, int h_ = 0, node* parent_ = nullptr);
+    node(int x_, int y_, int g_ = 0, int h_ = 0, node* parent_ = nullptr,int t_ = 0);
 };
 
 class pqueue {
